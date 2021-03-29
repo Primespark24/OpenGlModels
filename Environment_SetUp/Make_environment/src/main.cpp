@@ -2,8 +2,9 @@
  * Based on work by Graham Sellers and OpenGL SuperBible7
  * Also: https://en.wikibooks.org/wiki/OpenGL_Programming/Modern_OpenGL_Tutorial_Load_OBJ
  *       http://www.opengl-tutorial.org/beginners-tutorials/tutorial-7-model-loading/ 
+ *       https://antongerdelan.net/opengl/cubemaps.html
  * 
- * Example of loading data from object files
+ * Goal is to load a skycube and two objects (with the possibility of loading more objects)
  * 
  */
 
@@ -29,7 +30,7 @@ class test_app : public sb7::application{
 
     void init(){
         // Set up appropriate title
-        static const char title[] = "Brycen Object Loading";
+        static const char title[] = "Skybox Example";
         sb7::application::init();
         memcpy(info.title, title, sizeof(title));
 
@@ -38,205 +39,324 @@ class test_app : public sb7::application{
     }
     
     void startup(){
-        //Load object from file into vector<obj_>s
-        load_obj(".\\bin\\media\\PizzaPlate.obj",obj_verticies,obj_uv,obj_normals,obj_num);
-        load_obj(".\\bin\\media\\SteveBlank.obj",obj_verticies_2,obj_uv_2,obj_normals_2,obj_num_2); 
-        load_obj(".\\bin\\media\\Planet.obj",obj_verticies_3,obj_uv_3,obj_normals_3,obj_num_3);       
-        //We won't use uv or normals until we get to textures and lighting
+        //////////////////////
+        // Load Object Info //
+        //////////////////////
+        objects.push_back(obj_t()); //Push one new object into the vector list
+        objects.push_back(obj_t()); //Push second new object into the vector list
+        objects.push_back(obj_t()); //Push third object into vector list
+        // This program is set up to load multiple *different* objects
+        // If you wanted to decouple the data for objects from the transforms for object, it would be beneficial to 
+        // have two cooperative structs. One would hold the vertex data, the other would reference that data with 
+        // individual transform infomation.
 
-        // Placeholders for loaded shaders
+        //Also notice this could be automated / streamlined with a list of objects to load
+
+        //Load two objects
+        load_obj(".\\bin\\media\\PizzaPlate.obj", objects[0].verticies, objects[0].uv, objects[0].normals, objects[0].vertNum);
+        load_obj(".\\bin\\media\\SteveBlank.obj", objects[1].verticies, objects[1].uv, objects[1].normals, objects[1].vertNum);
+        load_obj(".\\bin\\media\\Planet.obj", objects[2].verticies, objects[2].uv, objects[2].normals, objects[2].vertNum);
+
+        ////////////////////////////////
+        //Set up Object Scene Shaders //
+        ////////////////////////////////
         GLuint shaders[2];
 
-        //Load respective shaders
+        //Load scene rendering based shaders
         //These need to be co-located with main.cpp in src
         shaders[0] = sb7::shader::load(".\\src\\vs.glsl", GL_VERTEX_SHADER);
         compiler_error_check(shaders[0]);
         shaders[1] = sb7::shader::load(".\\src\\fs.glsl", GL_FRAGMENT_SHADER);
         compiler_error_check(shaders[1]);
-        //Put together program from the two loaded shaders
+        //Put together scene rendering program from the two loaded shaders
         rendering_program = sb7::program::link_from_shaders(shaders, 2, true);
         GL_CHECK_ERRORS
 
-        glUseProgram(rendering_program); //unkown if useful
-        glCreateVertexArrays(1, &vertex_array_object);
+        /////////////////////////////////
+        // Transfer Object Into OpenGL //
+        /////////////////////////////////
+
+        //Set up vao
+        glUseProgram(rendering_program); //TODO:: This might not be necessary (because of the above link_from_shaders)
+        glCreateVertexArrays(1,&vertex_array_object);
         glBindVertexArray(vertex_array_object);
 
-        //Load device memory
-        //Vertex Buffer
-        glGenBuffers(1,&obj_vert_buffer); //Get buffer index
-        glBindBuffer(GL_ARRAY_BUFFER,obj_vert_buffer); //Bind index to by array buffer
-        glBufferData(GL_ARRAY_BUFFER,                                   //Buffer Array identification
-                     obj_verticies.size() * sizeof(obj_verticies[0]),   //Number of bytes (length * size of element)
-                     obj_verticies.data(),                              //source of data (direct pointer transfer)
-                     GL_STATIC_DRAW );                                  //We only need to set this once (right now)
+        for(int i = 0; i < objects.size(); i++){
+            //For each object in objects, set up openGL buffers
+            glGenBuffers(1,&objects[i].vertices_buffer_ID); //Create the buffer id for this object
+            glBindBuffer( GL_ARRAY_BUFFER, objects[i].vertices_buffer_ID);
+            glBufferData( GL_ARRAY_BUFFER,
+                objects[i].verticies.size() * sizeof(objects[i].verticies[0]), //Size of element * number of elements
+                objects[i].verticies.data(),                                   //Actual data
+                GL_STATIC_DRAW);                                               //Set to static draw (read only)  
+           
+            //If we needed to load the UVs or Normals, this would be where.
+        }
+        
+        GL_CHECK_ERRORS
+        ////////////////////////////////////
+        // Grab IDs for rendering program //
+        ////////////////////////////////////
+        transform_ID = glGetUniformLocation(rendering_program,"transform");
+        perspec_ID = glGetUniformLocation(rendering_program,"perspective");
+        toCam_ID = glGetUniformLocation(rendering_program,"toCamera");
+        vertex_ID = glGetAttribLocation(rendering_program,"obj_vertex");
 
-        //Vertex Buffer
-        glGenBuffers(1,&obj_vert_buffer_2); //Get buffer index
-        glBindBuffer(GL_ARRAY_BUFFER,obj_vert_buffer_2); //Bind index to by array buffer
-        glBufferData(GL_ARRAY_BUFFER,                                   //Buffer Array identification
-                     obj_verticies_2.size() * sizeof(obj_verticies_2[0]),   //Number of bytes (length * size of element)
-                     obj_verticies_2.data(),                              //source of data (direct pointer transfer)
-                     GL_STATIC_DRAW );                                  //We only need to set this once (right now)
+        ///////////////////////////
+        //Set up Skycube shaders //
+        ///////////////////////////
+        // Placeholders for loaded shaders
+        GLuint sc_shaders[2];
 
-        //vertex Buffer
-        glGenBuffers(1,&obj_vert_buffer_3); //Get buffer index
-        glBindBuffer(GL_ARRAY_BUFFER,obj_vert_buffer_3); //Bind Index to array buffer
-        glBufferData(GL_ARRAY_BUFFER,                                       //Buffer Array Id
-                     obj_verticies_3.size() * sizeof(obj_verticies_3[0]),   //number of bytes
-                     obj_verticies_3.data(),                                //Source of data
-                     GL_STATIC_DRAW );                                      //Only set now
+        //Load Skycube based shaders
+        //These need to be co-located with main.cpp in src
+        sc_shaders[0] = sb7::shader::load(".\\src\\sc_vs.glsl", GL_VERTEX_SHADER);
+        compiler_error_check(sc_shaders[0]);
+        sc_shaders[1] = sb7::shader::load(".\\src\\sc_fs.glsl", GL_FRAGMENT_SHADER);
+        compiler_error_check(sc_shaders[1]);
 
-        //////////////////////////////////////////////////////////////////////////////////////////////
-        // This would be where we need to load the normal and UV data as well (if we were using it) //
-        //////////////////////////////////////////////////////////////////////////////////////////////
+        //Put together Sky cube program from the two loaded shaders
+        sc_program = sb7::program::link_from_shaders(sc_shaders, 2, true);
+        GL_CHECK_ERRORS
 
-        //Set Up Vertex Attribute IDs 
-        transformID = glGetUniformLocation(rendering_program,"transform");
-        perspecID = glGetUniformLocation(rendering_program,"perspective");
-        toCamID = glGetUniformLocation(rendering_program,"toCamera");
-        attrib_obj_vertex = glGetAttribLocation(rendering_program,"obj_vertex");
+        /////////////////////
+        //Load Skycube info//
+        /////////////////////
+        //skycube_vertices holds triangle form of a cube
+        createCube(skycube_vertices);
+        //Set up Vertex Array Object and associated Vertex Buffer Object
+        GLuint vBufferObject; //We only need this to associate with sc_vertex_array_object
+        glGenBuffers(1,&vBufferObject); //Create the buffer id
+        glBindBuffer( GL_ARRAY_BUFFER, vBufferObject);
+        glBufferData( GL_ARRAY_BUFFER,
+                skycube_vertices.size() * sizeof(skycube_vertices[0]), //Size of element * number of elements
+                skycube_vertices.data(),                               //Actual data
+                GL_STATIC_DRAW);                                       //Set to static draw (read only)  
+        
+        glGenVertexArrays(1, &sc_vertex_array_object); // Get ID for skycube vao
+        glBindVertexArray(sc_vertex_array_object);
+        glEnableVertexAttribArray(0); //Enable Vertex Attribute Array
+        glBindBuffer( GL_ARRAY_BUFFER, vBufferObject);
+        glVertexAttribPointer( 0, 4, GL_FLOAT, GL_FALSE, 0, NULL); //Linking the buffer filled above to a vertex attribute
+        GL_CHECK_ERRORS
 
-        //Depth Test Enable (only render things 'forward' of other things)
-        glEnable(GL_DEPTH_TEST);
-        // Passes if the fragment's depth values is less than stored value
-        glDepthFunc(GL_LEQUAL);      
+        //Set up texture information
+        glActiveTexture(GL_TEXTURE0);     //Set following data to GL_TEXTURE0
+        glGenTextures(1,&sc_map_texture); //Grab texture ID
+        //Call a file loading function to load in textures for skybox
+        loadCubeTextures(".\\bin\\media\\Skycube\\",sc_map_texture);
+        GL_CHECK_ERRORS
 
-        glEnable(GL_DEPTH_CLAMP);
+        //Get uniform handles for perspective and camera matrices
+        sc_Perspective = glGetUniformLocation(sc_program,"perspective");
+        sc_Camera= glGetUniformLocation(sc_program,"toCamera");
+        GL_CHECK_ERRORS
+
+        /////////////////////
+        // Camera Creation //
+        /////////////////////
+        camera.camera_near = 0.1f; //Near Clipping Plane
+        camera.camera_far = 100.0f; //Far Clipping Plane
+        camera.fovy       = 67.0f; //Field of view in the y direction (x defined by aspect)
+        //Initial camera details
+        camera.position = vmath::vec3(0.0f, 0.0f, 5.0f); //Starting camera at position (0,0,5)
+        camera.focus = vmath::vec3(0.0f, 0.0f, 0.0f); //Camera is looking at origin
+        
+        //Now that we have parameters set, calculate the Projection and View information for this camera
+        calcProjection(camera); //Calculate the projection matrix used by this camera
+        calcView(camera); //Calculate the View matrix for camera
+
+        //Link locations to Uniforms
+        glUseProgram(sc_program);
+        glUniformMatrix4fv(sc_Perspective,1,GL_FALSE,camera.proj_Matrix);
+        glUniformMatrix4fv(sc_Camera,1,GL_FALSE,camera.view_mat_no_translation);
+        GL_CHECK_ERRORS
+
+        // General openGL settings
+        //src:: https://github.com/capnramses/antons_opengl_tutorials_book/tree/master/21_cube_mapping
+        glEnable( GL_DEPTH_TEST );          // enable depth-testing
+        glDepthFunc( GL_LESS );             // depth-testing interprets a smaller value as "closer"
+        glEnable( GL_CULL_FACE );           // cull face
+        glCullFace( GL_BACK );              // cull back face
+        glFrontFace( GL_CCW );              // set counter-clock-wise vertex order to mean the front
+        glClearColor( 0.2, 0.2, 0.2, 1.0 ); // grey background to help spot mistakes
 
         //End of set up check
         GL_CHECK_ERRORS
     }
 
     void shutdown(){
-        glDeleteVertexArrays(1, &vertex_array_object);
-        glDeleteBuffers(1, &obj_vert_buffer);
-        glDeleteProgram(rendering_program);
+        //Clean up Buffers
+        glDeleteVertexArrays(1, &sc_vertex_array_object);
+        glDeleteTextures(1,&sc_map_texture);
+        glDeleteProgram(sc_program);
     }
 
     void render(double curTime){
 
-        //Depth Mask Reset
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glViewport( 0, 0, info.windowWidth, info.windowHeight ); //Set Viewport information
 
-        static const GLfloat green[] = { 0.0f, 0.25f, 0.0f, 1.0f };
-        glClearBufferfv(GL_COLOR, 0, green);
-
-        glUseProgram(rendering_program);
-
-        // Object to world transform: scale + rotate
-        GLfloat angle = curTime*20; //vmath assumes degrees
-        vmath::mat4 transform = vmath::rotate( static_cast<float>(angle), 0.0f, 0.0f, 1.0f) *
-                    vmath::scale( 0.1f ) * //Scale down
-                    vmath::rotate( 90.0f, 1.0f, 0.0f, 0.0f) * //orient the pizza plate be upright in accordance with steves body
-                    vmath::translate(0.5f, -6.0f, -0.4f); //orient pizza plate to be in front of on steve
-
-        // Link transform to shader
-        glUniformMatrix4fv(transformID, 1, GL_FALSE, &transform[0][0]);
-
-        //Basic frustum perspective set up
-        vmath::mat4 perspective = vmath::frustum( -1.0f, 1.0f, -1.0f, 1.0f, 20.0f, -20.0f);
-        glUniformMatrix4fv(perspecID, 1, GL_FALSE, &perspective[0][0]);
-
-        //Set up and transfer camera transform
-        //vmath::mat4 camera = vmath::rotate(100.0f,1.0f,0.0f,0.0f); //Rotate down on the x axis
-
-        //Utilizing lookat function
-        vmath::vec3 eye(0.15f, 0.2f, 0.2f);  //Where the camera is
-        vmath::vec3 cent(0.1f, 0.0f, 0.1f); //Where the camera is looking
-        vmath::vec3 up(0.0f, 0.0f, -1.0f);    //what direction is 'up'
-        
-        
-        const float camSpeed = 1.0f;
-        if(glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
-        {
-            eye += camSpeed * cent;
-        }
-        if(glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
-        {
-            eye -= camSpeed * cent; 
-        }
-        if(glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
-        {
-            eye -= vmath::normalize(vmath::cross(cent, up)) * camSpeed;
-        }
-        if(glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-        {
-            eye += vmath::normalize(vmath::cross(cent, up)) * camSpeed;
+        //if Auto rotate flag is set, update the position of the camera
+        if(autoRotate){
+            camera.position = vmath::vec3(static_cast<float>(cos(curTime/10.0) * 5.0),
+                                          0.0f,
+                                          static_cast<float>(sin(curTime/10.0) * 5.0) );
         }
 
-        vmath::mat4 camera = vmath::lookat(eye,cent,up);
-        glUniformMatrix4fv(toCamID, 1, GL_FALSE, &camera[0][0]); //Link to shader
+        //recalculate the View matrix for camera
+        calcView(camera);
 
-        //Link obj_vert_buffer to attrib_obj_vertex
-        glEnableVertexAttribArray(attrib_obj_vertex); //Set attribute active for obj. vertex buffer
-        glBindBuffer(GL_ARRAY_BUFFER,obj_vert_buffer);//Acttivate vertex buffer (to bind to attribute obj vertex)
-        glVertexAttribPointer( //This will make attrib_obj_vertex (our link into the vertex shader) point to values in obj_vert_buffer
-            attrib_obj_vertex, //Attribute in question
-            4,                 //Number of elements (vec4)
-            GL_FLOAT,          //Type of element
-            GL_FALSE,          //Normalize? Nope
-            0,                 //No stride (steps between indexes)
-            0                  //initial offset
-        );
+        //Clear output
+        glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        //Start drawing some triangles!
-        glDrawArrays(GL_TRIANGLES, 0, obj_verticies.size());
+        runtime_error_check(1);
 
-        //////////////////////////////////
-        // Object 2!                    //
-        //////////////////////////////////
+        //Draw the skyCube!
+        drawSkyCube(curTime);
 
-        transform = vmath::rotate( static_cast<float>(angle), 0.0f, 0.0f, 1.0f) *
-                    vmath::scale( 0.025f ) * //Scale down
-                    vmath::rotate( 180.0f, 1.0f, 0.0f, 0.0f) * //orient the Steve to be upright in correlation to planet
-                    vmath::translate(0.0f, 0.0f, 18.0f); //orient Steve to be standing on planet surface
+        runtime_error_check(2);
 
-        // Link transform to shader
-        glUniformMatrix4fv(transformID, 1, GL_FALSE, &transform[0][0]);
+        /////////////////////////////////////////////////////////////////////////////////
+        // This would be where you want to call another program to render your 'stuff' //
+        // This could also go into a function for organizational ease                  //
+        /////////////////////////////////////////////////////////////////////////////////
 
-        //Link obj_vert_buffer to attrib_obj_vertex
-        glEnableVertexAttribArray(attrib_obj_vertex); //Set attribute active for obj. vertex buffer
-        glBindBuffer(GL_ARRAY_BUFFER,obj_vert_buffer_2);//Acttivate vertex buffer (to bind to attribute obj vertex)
-        glVertexAttribPointer( //This will make attrib_obj_vertex (our link into the vertex shader) point to values in obj_vert_buffer
-            attrib_obj_vertex, //Attribute in question
-            4,                 //Number of elements (vec4)
-            GL_FLOAT,          //Type of element
-            GL_FALSE,          //Normalize? Nope
-            0,                 //No stride (steps between indexes)
-            0                  //initial offset
-        );
+        //Set up obj->world transforms for each object (these could be modified for animation)
+        //Plate
+        //objects[0].obj2world = vmath::translate(1.5f, 0.2f, 1.5f) * vmath::scale(0.5f); // translate for object0
+        objects[0].obj2world = vmath::translate(0.4f, 1.05f, 1.1f) *
+                               vmath::rotate(0.0f, 1.0f, 0.0f, 0.0f) *
+                               vmath::scale(0.2f); // translate for object0
+        //Steve
+        objects[1].obj2world =  vmath::translate(0.5f, 0.8f, 1.0f) * 
+                                vmath::rotate(-90.0f, 1.0f, 0.0f, 0.0f) *  //orient Steve to be standing on planet surface
+                                vmath::scale(0.05f);
+        //Planet
+        objects[2].obj2world = vmath::translate(0.5f, 0.5f, 1.0f) * //get planet in 'right side up'
+                                vmath::scale(0.1f);
 
-        glDrawArrays(GL_TRIANGLES, 0, obj_verticies_2.size());
-        
-        //////////////////////////////////
-        // Object 3!                    //
-        //////////////////////////////////
+        for(int i = 0; i < objects.size(); i++ ){
+            //render loop, go through each object and render it!
+            glUseProgram(rendering_program); //activate the render program
+            glBindVertexArray(vertex_array_object); //Select base vao
 
-        transform = vmath::rotate( static_cast<float>(-angle), 0.0f, 0.0f, 1.0f) *
-                    vmath::scale( 0.1f ) * //Scale down
-                    vmath::rotate( -90.0f, 1.0f, 0.0f, 0.0f); //orient the planet 'right side up'
+            //Copy over all the transforms
+            glUniformMatrix4fv(transform_ID, 1,GL_FALSE, objects[i].obj2world); //Load in transform for this object
+            //TODO::These might only need to be loaded once (for all objects)
+            glUniformMatrix4fv(perspec_ID, 1,GL_FALSE, camera.proj_Matrix); //Load camera projection
+            glUniformMatrix4fv(toCam_ID, 1,GL_FALSE, camera.view_mat); //Load in view matrix for camera
 
-        // Link transform to shader
-        glUniformMatrix4fv(transformID, 1, GL_FALSE, &transform[0][0]);
+            //link to object buffer
+            glEnableVertexAttribArray(vertex_ID); //Recall the vertex ID
+            glBindBuffer(GL_ARRAY_BUFFER,objects[i].vertices_buffer_ID);//Link object buffer to vertex_ID
+            glVertexAttribPointer( //Index into the buffer
+                    vertex_ID, //Attribute in question
+                    4,         //Number of elements per vertex call (vec4)
+                    GL_FLOAT,  //Type of element
+                    GL_FALSE,  //Normalize? Nope
+                    0,         //No stride (steps between indexes)
+                    0);       //initial offset
 
-        //Link obj_vert_buffer to attrib_obj_vertex
-        glEnableVertexAttribArray(attrib_obj_vertex); //Set attribute active for obj. vertex buffer
-        glBindBuffer(GL_ARRAY_BUFFER,obj_vert_buffer_3);//Acttivate vertex buffer (to bind to attribute obj vertex)
-        glVertexAttribPointer( //This will make attrib_obj_vertex (our link into the vertex shader) point to values in obj_vert_buffer
-            attrib_obj_vertex, //Attribute in question
-            4,                 //Number of elements (vec4)
-            GL_FLOAT,          //Type of element
-            GL_FALSE,          //Normalize? Nope
-            0,                 //No stride (steps between indexes)
-            0                  //initial offset
-        );
+            glDrawArrays( GL_TRIANGLES, 0, objects[i].verticies.size());
+        }
 
-        glDrawArrays(GL_TRIANGLES, 0, obj_verticies_3.size());
+        runtime_error_check(4);
+    }
 
-        //Reset Attribute Array
-        glDisableVertexAttribArray(attrib_obj_vertex);        
+    void drawSkyCube(double curTime){
+
+        glDepthMask( GL_FALSE ); //Used to force skybox 'into' the back, making sure everything is rendered over it
+        glUseProgram( sc_program ); //Select the skycube program
+        glUniformMatrix4fv( sc_Perspective, 1, GL_FALSE, camera.proj_Matrix); //Update the projection matrix (if needed)
+        glUniformMatrix4fv( sc_Camera, 1, GL_FALSE, camera.view_mat_no_translation); //Update the projection matrix (if needed)
+        glActiveTexture( GL_TEXTURE0 ); //Make sure we are using the CUBE_MAP texture we already set up
+        glBindTexture( GL_TEXTURE_CUBE_MAP, sc_map_texture ); //Link to the texture
+        glBindVertexArray( sc_vertex_array_object ); // Set up the vertex array
+        glDrawArrays( GL_TRIANGLES, 0, skycube_vertices.size() ); //Start drawing triangles
+        glDepthMask( GL_TRUE ); //Turn depth masking back on
 
         runtime_error_check();
+    }
+
+    void onResize(int w, int h) {
+        info.windowWidth = w;
+        info.windowHeight = h;
+        //Recalculate the projection matrix used by camera
+        calcProjection(camera); 
+    }
+
+    void onKey(int key, int action) {
+        //If something did happen
+        if (action) {
+            switch (key) { //Select an action
+                // Q +x cameraPos  W +y cameraPos  E +z cameraPos
+                // A -x cameraPos  S -y cameraPos  D -z cameraPos
+                // Z - Reset to default X Diagnostic Printout
+                // C - toggle auto rotate flag
+                // T +x cameraFocus  Y +y cameraFocus  U +z cameraFocus
+                // G -x cameraFocus  H -y cameraFocus  J -z cameraFocus
+                case 'Q':
+                    camera.position[0] += 0.01;
+                    break;
+                case 'A':
+                    camera.position[0] -= 0.01;
+                    break;
+                case 'W':
+                    camera.position[1] += 0.01;
+                    break;
+                case 'S':
+                    camera.position[1] -= 0.01;
+                    break;
+                case 'E':
+                    camera.position[2] += 0.01;
+                    break;
+                case 'D':
+                    camera.position[2] -= 0.01;
+                    break;
+                case 'T':
+                    camera.focus[0] += 0.01;
+                    break;
+                case 'G':
+                    camera.focus[0] -= 0.01;
+                    break;
+                case 'Y':
+                    camera.focus[1] += 0.01;
+                    break;
+                case 'H':
+                    camera.focus[1] -= 0.01;
+                    break;
+                case 'U':
+                    camera.focus[2] += 0.01;
+                    break;
+                case 'J':
+                    camera.focus[2] -= 0.01;
+                    break;
+                case 'C':
+                    autoRotate = !autoRotate;
+                    break;
+                case 'Z': //Reset
+                    camera.position = vmath::vec3(0.0f, 0.0f, 5.0f); //Starting camera at position (0,0,5)
+                    camera.focus = vmath::vec3(0.0f, 0.0f, 0.0f); //Camera is looking in the +y direction
+                    break;
+                case 'X': //Info
+                    char buf[50];
+                    sprintf(buf, "Current Camera Pos:(%.3f,%.3f,%.3f) Focus:(%.3f,%.3f,%.3f)",
+                                       camera.position[0],camera.position[1],camera.position[2],
+                                       camera.focus[0],camera.focus[1],camera.focus[2]);
+                    MessageBoxA(NULL, buf, "Diagnostic Printout", MB_OK);
+                    break;
+                case 'M': //Info
+                    char buf2[200];
+                    sprintf(buf2, "Current Not translation mat \n[ %.3f, %.3f, %.3f, %.3f] \n[ %.3f, %.3f, %.3f, %.3f] \n[ %.3f, %.3f, %.3f, %.3f] \n[ %.3f, %.3f, %.3f, %.3f]",
+                                       camera.view_mat_no_translation[0][0],camera.view_mat_no_translation[0][1],camera.view_mat_no_translation[0][2],camera.view_mat_no_translation[0][3],
+                                       camera.view_mat_no_translation[1][0],camera.view_mat_no_translation[1][1],camera.view_mat_no_translation[1][2],camera.view_mat_no_translation[1][3],
+                                       camera.view_mat_no_translation[2][0],camera.view_mat_no_translation[2][1],camera.view_mat_no_translation[2][2],camera.view_mat_no_translation[2][3],
+                                       camera.view_mat_no_translation[3][0],camera.view_mat_no_translation[3][1],camera.view_mat_no_translation[3][2],camera.view_mat_no_translation[3][3]);
+                    MessageBoxA(NULL, buf2, "Diagnostic Printout", MB_OK);
+                    break;
+            }
+        }
+
     }
 
     void runtime_error_check(GLuint tracker = 0)
@@ -278,200 +398,81 @@ class test_app : public sb7::application{
     }
 
     private:
-        GLuint rendering_program;
+        //Scene Rendering Information
+        GLuint rendering_program; //Program reference for scene generation
         GLuint vertex_array_object;
-
-        //Uniform attributes
-        GLuint transformID; //Dynamic transform of object
-        GLuint perspecID;   //Perspective transform
-        GLuint toCamID;     //World to Camera transform
-
-        //Buffer identifiers
-        GLuint obj_vert_buffer;
-        GLuint obj_vert_buffer_2;
-        GLuint obj_vert_buffer_3;
-
-        //Vertex Attributes
-        GLuint attrib_obj_vertex; 
-
-        //Data for object
-        std::vector<vmath::vec4> obj_verticies;
-        std::vector<vmath::vec4> obj_normals;
-        std::vector<vmath::vec2> obj_uv;
-        GLuint obj_num;
-
-        //Data for object 2
-        std::vector<vmath::vec4> obj_verticies_2;
-        std::vector<vmath::vec4> obj_normals_2;
-        std::vector<vmath::vec2> obj_uv_2;
-        GLuint obj_num_2;
-
-        //Data for object 3
-        std::vector<vmath::vec4> obj_verticies_3;
-        std::vector<vmath::vec4> obj_normals_3;
-        std::vector<vmath::vec2> obj_uv_3;
-        GLuint obj_num_3;
-
         
-    //Object Loading Information
-    //Referenced from https://en.wikibooks.org/wiki/OpenGL_Programming/Modern_OpenGL_Tutorial_Load_OBJ
-    // and http://www.opengl-tutorial.org/beginners-tutorials/tutorial-7-model-loading/ 
-    // When exporting from blender, keep everything default except:
-    //       Make sure to include Normals
-    //       Include UVs
-    //       Triangulate Faces
-    //       Don't 'Write Materials'
+        //Uniform attributes for Scene Render
+        GLuint transform_ID; //Dynamic transform of object
+        GLuint perspec_ID;   //Perspective transform
+        GLuint toCam_ID;     //World to Camera transform
+        GLuint vertex_ID;    //This will be mapped to different objects as we load them
 
-    // filename - Blender .obj file (see file formatting specifics above)
-    // All vectors passed by reference and filled in function
-    // vertices - list of, in order, verticies for object. In triangles
-    // UVs - Texture mapping coordinates, indexed with the above vertices
-    // normals - index with the above vertices
-    // number - Total number of points in vertices (should be vertices.length())
-    void load_obj(const char* filename, std::vector<vmath::vec4> &vertices, std::vector<vmath::vec2> &uvs, std::vector<vmath::vec4> &normals, GLuint &number)
-    {
-        //File to load in
-        std::ifstream in(filename, std::ios::in);
+        //Structure to hold all the object info
+        struct obj_t{
+            //Data for object loaded from file
+            std::vector<vmath::vec4> verticies;
+            std::vector<vmath::vec4> normals;
+            std::vector<vmath::vec2> uv;
+            GLuint vertNum; //This should be the same as vertivies.size()
 
-        //Check to make sure file opened
-        if (!in) {
-            char buf[50];
-            sprintf(buf, "OBJ file not found!");
-            MessageBoxA(NULL, buf, "Error in loading obj file", MB_OK);
+            //Handle from OpenGL set up
+            GLuint vertices_buffer_ID;        
+
+            //Object to World transforms
+            vmath::mat4 obj2world;
+        };
+
+        //Hold all of our objects
+        std::vector<obj_t> objects;
+
+
+
+        //Data for Skycube
+        GLuint sc_program; //Program refernce
+
+        GLuint sc_vertex_array_object;
+        GLuint sc_map_texture;
+
+        //TODO:: Rename these better names
+        GLuint sc_Camera;
+        GLuint sc_Perspective;
+
+        std::vector<vmath::vec4> skycube_vertices; //List of skycube vertexes
+
+        bool autoRotate = false;
+
+        // Camera Stuff
+        struct camera_t{ //Keep all of our camera stuff together
+            float camera_near;   //Near clipping mask
+            float camera_far;    //Far clipping mask
+            float fovy;          //Field of View in y
+            float aspect;        //Aspect ratio (w/h)
+            vmath::mat4 proj_Matrix; //Collection of the above
+
+            vmath::vec3 position; //Current world coordinates of the camera
+            vmath::vec3 focus; //Current world focus of the camera
+            //TODO:: Maybe we just want to use euler angles here
+
+            vmath::mat4 view_mat; //World to Camera matrix
+            vmath::mat4 view_mat_no_translation; //World to Camera matrix with no translation
+        } camera;
+
+        //Utility to update project matrix and view matrix of a camera_t
+        void calcProjection(camera_t &cur){
+            cur.aspect = static_cast<float>(info.windowWidth) / static_cast<float>(info.windowHeight); //Maybe this will keep it updated?
+            cur.proj_Matrix = vmath::perspective(cur.fovy,cur.aspect, cur.camera_near, cur.camera_far);
+        }
+        void calcView(camera_t &cur){
+            cur.view_mat = vmath::lookat(cur.position,cur.focus,vmath::vec3(0.0f,1.0f,0.0f)); //Based on position and focus location
+            cur.view_mat_no_translation = cur.view_mat;   
+            //Removing the tranlational elements for skybox         
+            cur.view_mat_no_translation[3][0] = 0;
+            cur.view_mat_no_translation[3][1] = 0;
+            cur.view_mat_no_translation[3][2] = 0;
         }
 
-        //Temp vectors to hold data
-        //These will need to be indexed into the output vectors based on face info
-        std::vector<vmath::vec4> tempVert; // from vertices lines 'v <x> <y> <z>'
-        //This might need to be a more complicated structure, we can get away with strict indexing
-        std::vector<GLuint> tempFace; // from face line 'f <v1>/<t1>/<n1> <v2>/<t2>/<n2> <v3>/<t3>/<n3>', should be indexes
-        std::vector<vmath::vec2> tempUVs; // from texture line 'vt <x> <y>'
-        std::vector<vmath::vec4> tempNorm; // from a normal line 'vn <x> <y> <z>' //Should this be a vec3 or vec4?
 
-        std::string line;       // Complete line pulled from file    
-        std::string sub = "";   // Substring working space
-        GLfloat num;            // Temp floats from line processing
-        while (std::getline(in, line)) { //grab every line of the file
-            //Depending on what is in the line, parse differently 
-            
-            if (line.substr(0,2) == "v ") {
-                //Process vertex line
-                sub = line.substr(2); //Isolate substring without 'v'
-
-                //vector to be filled
-                vmath::vec4 tVec(0.0f,0.0f,0.0f,1.0f);                
-                
-                //Expect 3 numbers, iterate three times
-                //Isolate number and clip substring [x,y,z,1]
-                tVec[0] = stof(parseAndClip(sub," "));
-                tVec[1] = stof(parseAndClip(sub," "));
-                tVec[2] = stof(parseAndClip(sub," "));
-                
-                //Push vec4 onto verticies vector
-                tempVert.push_back(tVec);
-               
-            } else if (line.substr(0,2) == "f ") {
-                //Process face line 
-                // Faces line f 14/25/9 60/19/9 56/97/9 : f <vertex1>/<texture1>/<normal1> <vertex2>/<texture2>/<normal2> <vertex3>/<texture3>/<normal3>
-                sub = line.substr(2); //Current sub string of line
-                //Expect 3 number sets, loop three times
-                for(int i = 0; i < 3; i++) {
-                    //Isolate next triangle set
-                    //First before / /
-                    tempFace.push_back( stoi(parseAndClip(sub,"/")) ); //sub_part 0 == vertex index
-                    
-                    //second value in triplet (between the / and /)
-                    tempFace.push_back( stoi(parseAndClip(sub,"/")) ); //sub_part 1 == texture coordinate index
-
-                    //third value in triplet (after both /, " " up next)
-                    tempFace.push_back( stoi(parseAndClip(sub," ")) ); //sub_part 2 == normal index                    
-                }
-                //Already pushed info onto faces
-            
-            } else if (line.substr(0,3) == "vt ") {
-                //Process Texture mappings
-                sub = line.substr(3); //Isolate substring without 'vt '
-
-                vmath::vec2 tUV(0.0f,0.0f);
-                //Expect 2 numbers, loop twice
-                tUV[0] = stof(parseAndClip(sub," ")); //x
-                tUV[1] = stof(parseAndClip(sub," ")); //y
-
-                //Push vec2 onto texture vector
-                tempUVs.push_back(tUV);                
-
-            } else if (line.substr(0,3) == "vn ") {
-                //Process normal line
-                sub = line.substr(3); //Isolate substring without 'vt '
-
-                //4D? is w:0?
-                vmath::vec4 tNorm(0.0f,0.0f,0.0f,0.0f);
-
-                //Expect 3 numbers, loop thrice
-                //Isolate number and clip substring
-                tNorm[0] = stof(parseAndClip(sub," "));
-                tNorm[1] = stof(parseAndClip(sub," "));
-                tNorm[2] = stof(parseAndClip(sub," "));
-                
-                //Push normal onto tempNormal vector
-                tempNorm.push_back(tNorm);
-
-            } else {
-                //other kind of line, ignoring
-            }
-        } //end of line parsing
-
-        //Clear out output vectors (just to be safe)
-        vertices.clear();
-        uvs.clear();
-        normals.clear();
-        number = 0;
-
-        //At this point out temp vectors are full of data
-        // tempVert, tempUVs and tempNorm are indexed (starting at 0) in file order
-        // tempFace correlates everything together in sets of 9 values (three triplets)
-        // Using the data in tempFace the output vectors will be filled with the correct (in order) data
-
-        //                   0    1    2    3    4    5    6    7    8
-        // Faces striping: <v1>/<t1>/<n1> <v2>/<t2>/<n2> <v3>/<t3>/<n3>
-        //Because the data in tempFace is striped buy sets of three triplets, step forward by 9 each time
-        for(int i = 0; i < tempFace.size(); i += 9 ){
-            //Pull data into vertices
-            //                                   VVV Index offset pattern
-            //                          VVV Holds vertex index to pull from tempVery (offset from starting at 1 to 0)    
-            //                 VVV Indexed vertex info
-            vertices.push_back(tempVert[tempFace[i+0]-1]); //v1
-            vertices.push_back(tempVert[tempFace[i+3]-1]); //v2
-            vertices.push_back(tempVert[tempFace[i+6]-1]); //v3
-
-            //Pull data into uvs
-            uvs.push_back(tempUVs[tempFace[i+1]-1]); //uv1
-            uvs.push_back(tempUVs[tempFace[i+4]-1]); //uv2
-            uvs.push_back(tempUVs[tempFace[i+7]-1]); //uv3
-
-            //Pull data into normals
-            normals.push_back(tempNorm[tempFace[i+2]-1]); //n1
-            normals.push_back(tempNorm[tempFace[i+5]-1]); //n1
-            normals.push_back(tempNorm[tempFace[i+8]-1]); //n1
-
-            number++; //Sanity Check to make sure things line up
-        }
-        
-    }
-
-    //File parsing helper
-    //Pull off the first element of sub up to delim
-    // Ex: sub |0.877342 0.081279 -0.329742| delim: " "
-    // returns |0.877342|
-    // changes sub (via reference) to |0.081279 -0.329742|    
-    std::string parseAndClip(std::string& sub, std::string delim){
-        unsigned int curIndex = sub.find(delim); //Defined once to speed up
-        //Grab substring upto first delimeter
-        std::string ret = sub.substr(0,curIndex);
-        //delete everything upto delimeter
-        sub = sub.substr(curIndex+1);
-        return ret;
-    }
 };
 
 
