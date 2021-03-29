@@ -296,40 +296,40 @@ class test_app : public sb7::application{
                 // T +x cameraFocus  Y +y cameraFocus  U +z cameraFocus
                 // G -x cameraFocus  H -y cameraFocus  J -z cameraFocus
                 case 'Q':
-                    camera.position[0] += 0.01;
+                    camera.position[0] += 0.02;
                     break;
                 case 'A':
-                    camera.position[0] -= 0.01;
+                    camera.position[0] -= 0.02;
                     break;
                 case 'W':
-                    camera.position[1] += 0.01;
+                    camera.position[1] += 0.02;
                     break;
                 case 'S':
-                    camera.position[1] -= 0.01;
+                    camera.position[1] -= 0.02;
                     break;
                 case 'E':
-                    camera.position[2] += 0.01;
+                    camera.position[2] += 0.04;
                     break;
                 case 'D':
-                    camera.position[2] -= 0.01;
+                    camera.position[2] -= 0.04;
                     break;
                 case 'T':
-                    camera.focus[0] += 0.01;
+                    camera.focus[0] += 0.02;
                     break;
                 case 'G':
-                    camera.focus[0] -= 0.01;
+                    camera.focus[0] -= 0.02;
                     break;
                 case 'Y':
-                    camera.focus[1] += 0.01;
+                    camera.focus[1] += 0.02;
                     break;
                 case 'H':
-                    camera.focus[1] -= 0.01;
+                    camera.focus[1] -= 0.02;
                     break;
                 case 'U':
-                    camera.focus[2] += 0.01;
+                    camera.focus[2] += 0.02;
                     break;
                 case 'J':
-                    camera.focus[2] -= 0.01;
+                    camera.focus[2] -= 0.02;
                     break;
                 case 'C':
                     autoRotate = !autoRotate;
