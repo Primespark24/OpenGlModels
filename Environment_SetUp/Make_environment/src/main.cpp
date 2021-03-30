@@ -295,41 +295,41 @@ class test_app : public sb7::application{
                 // C - toggle auto rotate flag
                 // T +x cameraFocus  Y +y cameraFocus  U +z cameraFocus
                 // G -x cameraFocus  H -y cameraFocus  J -z cameraFocus
-                case 'Q':
-                    camera.position[0] += 0.02;
+                case 'D':
+                    camera.position[0] += 0.04;
                     break;
                 case 'A':
-                    camera.position[0] -= 0.02;
+                    camera.position[0] -= 0.04;
                     break;
-                case 'W':
-                    camera.position[1] += 0.02;
-                    break;
-                case 'S':
-                    camera.position[1] -= 0.02;
+                case 'Q':
+                    camera.position[1] += 0.04;
                     break;
                 case 'E':
-                    camera.position[2] += 0.04;
+                    camera.position[1] -= 0.04;
                     break;
-                case 'D':
-                    camera.position[2] -= 0.04;
+                case 'S':
+                    camera.position[2] += 0.08;
+                    break;
+                case 'W':
+                    camera.position[2] -= 0.08;
                     break;
                 case 'T':
-                    camera.focus[0] += 0.02;
+                    camera.focus[0] += 0.04;
                     break;
                 case 'G':
-                    camera.focus[0] -= 0.02;
+                    camera.focus[0] -= 0.04;
                     break;
                 case 'Y':
-                    camera.focus[1] += 0.02;
+                    camera.focus[1] += 0.04;
                     break;
                 case 'H':
-                    camera.focus[1] -= 0.02;
+                    camera.focus[1] -= 0.04;
                     break;
                 case 'U':
-                    camera.focus[2] += 0.02;
+                    camera.focus[2] += 0.04;
                     break;
                 case 'J':
-                    camera.focus[2] -= 0.02;
+                    camera.focus[2] -= 0.04;
                     break;
                 case 'C':
                     autoRotate = !autoRotate;
